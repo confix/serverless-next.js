@@ -55,6 +55,7 @@ const prepareSubdomains = (inputs) => {
   return subdomains;
 };
 
+// todo: check whether actually used... seems to be broken
 const getOutdatedDomains = (inputs, state) => {
   if (inputs.domain !== state.domain) {
     return state;
@@ -75,7 +76,10 @@ const getOutdatedDomains = (inputs, state) => {
 };
 
 /**
- * Get Domain Hosted Zone ID
+ * Gets the identifier for a domain hosted with Route53.
+ * @param  {Route53} route53 - The AWS Route53 client
+ * @param {string} domain - The domain name to get the identifier for.
+ * @param {boolean} privateZone - True when zone is private, false otherwise.
  * - Every Domain on Route53 always has a Hosted Zone w/ 2 Record Sets.
  * - These Record Sets are: "Name Servers (NS)" & "Start of Authority (SOA)"
  * - These don't need to be created and SHOULD NOT be modified.
