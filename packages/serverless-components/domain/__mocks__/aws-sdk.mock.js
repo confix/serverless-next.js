@@ -26,6 +26,19 @@ const mockListCertificatesPromise = promisifyMock(mockListCertificates);
 const mockRequestCertificate = jest.fn();
 const mockRequestCertificatePromise = promisifyMock(mockRequestCertificate);
 
+const mockGetDistributionConfig = jest.fn();
+const mockGetDistributionConfigPromise = promisifyMock(
+  mockGetDistributionConfig
+);
+
+const mockUpdateDistribution = jest.fn();
+const mockUpdateDistributionPromise = promisifyMock(mockUpdateDistribution);
+
+const mockListResourceRecordSets = jest.fn();
+const mockListResourceRecordSetsPromise = promisifyMock(
+  mockListResourceRecordSets
+);
+
 module.exports = {
   mockListHostedZonesByName,
   mockListHostedZonesByNamePromise,
@@ -33,16 +46,29 @@ module.exports = {
   mockChangeResourceRecordSetsPromise,
   mockDescribeCertificate,
   mockDescribeCertificatePromise,
+  mockListCertificates,
+  mockListCertificatesPromise,
   mockRequestCertificate,
   mockRequestCertificatePromise,
+  mockGetDistributionConfig,
+  mockGetDistributionConfigPromise,
+  mockUpdateDistribution,
+  mockUpdateDistributionPromise,
+  mockListResourceRecordSets,
+  mockListResourceRecordSetsPromise,
 
   Route53: jest.fn(() => ({
     listHostedZonesByName: mockListHostedZonesByName,
-    changeResourceRecordSets: mockChangeResourceRecordSets
+    changeResourceRecordSets: mockChangeResourceRecordSets,
+    listResourceRecordSets: mockListResourceRecordSets
   })),
   ACM: jest.fn(() => ({
     describeCertificate: mockDescribeCertificate,
     listCertificates: mockListCertificates,
     requestCertificate: mockRequestCertificate
+  })),
+  CloudFront: jest.fn(() => ({
+    getDistributionConfig: mockGetDistributionConfig,
+    updateDistribution: mockUpdateDistribution
   }))
 };

@@ -1,3 +1,8 @@
+const { validateCertificate } = require("../utils");
+const { getCertificateArnByDomain } = require("../utils");
+const { removeDomainFromCloudFrontDistribution } = require("../utils");
+const { addDomainToCloudfrontDistribution } = require("../utils");
+const { removeCloudFrontDomainDnsRecords } = require("../utils");
 const { configureDnsForCloudFrontDistribution } = require("../utils");
 const { createCertificate } = require("../utils");
 const { describeCertificateByArn } = require("../utils");
@@ -14,6 +19,12 @@ const {
   mockRequestCertificatePromise,
   mockChangeResourceRecordSets,
   mockChangeResourceRecordSetsPromise,
+  mockGetDistributionConfig,
+  mockGetDistributionConfigPromise,
+  mockUpdateDistributionPromise,
+  mockListCertificatesPromise,
+  mockListResourceRecordSetsPromise,
+  CloudFront,
   Route53,
   ACM
 } = require("aws-sdk");
@@ -38,6 +49,10 @@ const cf = {
 const defaultInput = {
   domain,
   subdomains: {}
+};
+
+const noopContext = {
+  debug: () => {}
 };
 
 describe("prepareSubdomains", () => {
@@ -238,7 +253,95 @@ describe("describeCertificateByArn", () => {
   });
 });
 
-// todo: "getCertificateArnByDomain"
+describe("getCertificateArnByDomain", () => {
+  it("xx", async () => {
+    mockListCertificatesPromise.mockResolvedValueOnce({
+      CertificateSummaryList: [
+        {
+          CertificateArn: "cert:arn:1",
+          DomainName: "example.com"
+        }
+      ]
+    });
+
+    const acm = new ACM();
+
+    const cert = await getCertificateArnByDomain(acm, "example.com");
+
+    expect(cert).toEqual("cert:arn:1");
+  });
+
+  it("returns null when certificate not found", async () => {
+    mockListCertificatesPromise.mockResolvedValueOnce({
+      CertificateSummaryList: [
+        {
+          CertificateArn: "cert:arn:1",
+          DomainName: "example.com"
+        }
+      ]
+    });
+
+    const acm = new ACM();
+
+    const cert = await getCertificateArnByDomain(acm, "another.com");
+
+    expect(cert).toBeNull();
+  });
+
+  it("support stuff", async () => {
+    mockListCertificatesPromise.mockResolvedValueOnce({
+      CertificateSummaryList: [
+        {
+          CertificateArn: "cert:arn:1",
+          DomainName: "www.example.com"
+        }
+      ]
+    });
+
+    mockDescribeCertificatePromise.mockResolvedValueOnce({
+      Certificate: {
+        DomainValidationOptions: [
+          {
+            DomainName: "example.com"
+          }
+        ]
+      }
+    });
+
+    const acm = new ACM();
+
+    const cert = await getCertificateArnByDomain(acm, "www.example.com");
+
+    expect(cert).toEqual("cert:arn:1");
+  });
+
+  it("should not find stuff", async () => {
+    mockListCertificatesPromise.mockResolvedValueOnce({
+      CertificateSummaryList: [
+        {
+          CertificateArn: "cert:arn:1",
+          DomainName: "www.example.com"
+        }
+      ]
+    });
+
+    mockDescribeCertificatePromise.mockResolvedValueOnce({
+      Certificate: {
+        DomainValidationOptions: [
+          {
+            DomainName: "www2.example.com"
+          }
+        ]
+      }
+    });
+
+    const acm = new ACM();
+
+    const cert = await getCertificateArnByDomain(acm, "www.example.com");
+
+    expect(cert).toEqual(null);
+  });
+});
 
 describe("createCertificate", () => {
   it("creates the certificate", async () => {
@@ -262,7 +365,38 @@ describe("createCertificate", () => {
   });
 });
 
-// todo: validateCertificate
+describe("validateCertificate", () => {
+  it("runs", async () => {
+    const acm = new ACM();
+    const route53 = new Route53();
+
+    mockDescribeCertificatePromise.mockResolvedValue({
+      Certificate: {
+        Status: "ISSUED",
+        DomainValidationOptions: [
+          {
+            DomainName: "example.com",
+            ResourceRecord: {}
+          }
+        ]
+      }
+    });
+
+    mockListResourceRecordSetsPromise.mockResolvedValueOnce({
+      ResourceRecordSets: []
+    });
+
+    await validateCertificate(
+      acm,
+      route53,
+      {
+        CertificateArn: "arn:cert:1"
+      },
+      "example.com",
+      "zone-id"
+    );
+  });
+});
 
 describe("configureDnsForCloudFrontDistribution", () => {
   it("runs2", async () => {
@@ -294,7 +428,9 @@ describe("configureDnsForCloudFrontDistribution", () => {
       "zone-id",
       "distr.cloudfront.net",
       "apex",
-      { debug: () => {} }
+      {
+        debug: () => {}
+      }
     );
 
     expect(mockChangeResourceRecordSets).toHaveBeenCalledWith(request);
@@ -329,9 +465,145 @@ describe("configureDnsForCloudFrontDistribution", () => {
       "zone-id",
       "distr.cloudfront.net",
       "www",
-      { debug: () => {} }
+      {
+        debug: () => {}
+      }
     );
 
     expect(mockChangeResourceRecordSets).toHaveBeenCalledWith(request);
+  });
+});
+
+describe("removeCloudFrontDomainDnsRecords", () => {
+  it("delete the record using the Route53 client", async () => {
+    const request = {
+      HostedZoneId: "zone-id",
+      ChangeBatch: {
+        Changes: [
+          {
+            Action: "DELETE",
+            ResourceRecordSet: {
+              Name: "example.com",
+              Type: "A",
+              AliasTarget: {
+                HostedZoneId: "Z2FDTNDATAQYW2",
+                DNSName: "xxx.cloudfront.net",
+                EvaluateTargetHealth: false
+              }
+            }
+          }
+        ]
+      }
+    };
+
+    const route53 = new Route53();
+
+    await removeCloudFrontDomainDnsRecords(
+      route53,
+      "example.com",
+      "zone-id",
+      "xxx.cloudfront.net",
+      {
+        debug: () => {}
+      }
+    );
+
+    expect(mockChangeResourceRecordSets).toHaveBeenCalledWith(request);
+  });
+
+  it("catches invalid change batch errors", async () => {
+    const route53 = new Route53();
+
+    mockChangeResourceRecordSetsPromise.mockRejectedValueOnce({
+      code: "InvalidChangeBatch"
+    });
+
+    await removeCloudFrontDomainDnsRecords(
+      route53,
+      "example.com",
+      "zone-id",
+      "xxx.cloudfront.net",
+      noopContext
+    );
+  });
+
+  it("rethrows any other errors", async () => {
+    const route53 = new Route53();
+
+    mockChangeResourceRecordSetsPromise.mockRejectedValueOnce({
+      code: "Another error"
+    });
+
+    expect(() =>
+      removeCloudFrontDomainDnsRecords(
+        route53,
+        "example.com",
+        "zone-id",
+        "xxx.cloudfront.net",
+        noopContext
+      )
+    ).rejects.toThrowError();
+  });
+});
+
+describe("addDomainToCloudfrontDistribution", () => {
+  it("t", async () => {
+    mockUpdateDistributionPromise.mockResolvedValueOnce({
+      Distribution: {
+        Id: "",
+        ARN: "",
+        DomainName: ""
+      }
+    });
+    mockGetDistributionConfigPromise.mockResolvedValueOnce({
+      ETag: "etag",
+      DistributionConfig: {
+        Aliases: {}
+      }
+    });
+
+    const cf = new CloudFront();
+
+    await addDomainToCloudfrontDistribution(
+      cf,
+      {
+        domain: "",
+        distributionId: ""
+      },
+      "cert:arn",
+      "apex",
+      {
+        viewerCertificate: {}
+      },
+      noopContext
+    );
+  });
+});
+
+describe("removeDomainFromCloudFrontDistribution", () => {
+  it("x", async () => {
+    mockGetDistributionConfigPromise.mockResolvedValueOnce({
+      DistributionConfig: {
+        Aliases: {}
+      }
+    });
+
+    mockUpdateDistributionPromise.mockResolvedValueOnce({
+      Distribution: {
+        Id: "",
+        ARN: "",
+        DomainName: ""
+      }
+    });
+
+    const cf = new CloudFront();
+
+    await removeDomainFromCloudFrontDistribution(
+      cf,
+      {
+        distributionId: "dist:id"
+      },
+      noopContext
+    );
   });
 });
